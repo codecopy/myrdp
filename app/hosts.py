@@ -4,7 +4,7 @@ from app.log import logger
 from sqlalchemy import or_
 from sqlalchemy.sql.expression import case, collate
 
-from app.database.schema import HostTable
+from app.database.schema import HostTable, GroupsTable
 
 
 class Hosts(object):
@@ -48,10 +48,11 @@ class Hosts(object):
         """
         :return: list with group names
         """
-        return sum(self._db.session.query(HostTable.group).filter(HostTable.group.isnot(None)).distinct(), ())
+        return sum(self._db.session.query(GroupsTable.name), ())
 
     def getGroupedHostNames(self, queryFilter=None):
-        hostsList = self._db.session.query(HostTable.name, HostTable.group).order_by(
+        hostsList = self._db.session.query(HostTable.name, GroupsTable.name).outerjoin(
+            GroupsTable, HostTable.group == GroupsTable.id).order_by(
             case([(HostTable.group == None, 1)], else_=0),  # nulls last
             collate(HostTable.group, 'NOCASE'),
             collate(HostTable.name, 'NOCASE')
