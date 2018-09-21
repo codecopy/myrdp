@@ -28,3 +28,7 @@ class GroupsTable(Base):
     name = Column(String, nullable=False, unique=True)
     default_user_name = Column(String)
     default_password = Column(String)
+
+    def __repr__(self):
+        return u"<id='%s', name='%s', default_user_name='%s', default_password='%s'>" \
+               % (self.id, self.name, self.default_user_name, self.default_password)

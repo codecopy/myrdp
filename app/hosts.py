@@ -7,6 +7,31 @@ from sqlalchemy.sql.expression import case, collate
 from app.database.schema import HostTable, GroupsTable
 
 
+class Groups(object):
+    def __init__(self, database):
+        self._db = database
+
+    def get(self, name):
+        group = self._db.getObjectByName(GroupsTable, name)
+        if group is None:
+            raise LookupError(u"Host not found")
+
+        return group
+
+    def create(self, name, defaultPassword=None, defaultUsername=None):
+        group = GroupsTable(name=name, default_password=defaultPassword, default_user_name=defaultUsername)
+        self._db.createObject(group)
+        return group
+
+    def getOrCreate(self, groupName):
+        try:
+            group = self.get(groupName)
+        except LookupError:
+            group = self.create(groupName)
+
+        return group
+
+
 class Hosts(object):
     def __init__(self, database, crypto):
         """
@@ -17,9 +42,14 @@ class Hosts(object):
         """
         self._db = database
         self._crypto = crypto
+        self.groups = Groups(self._db)
 
     def get(self, hostName):
-        hostTable = self._db.getObjectByName(HostTable, hostName)
+        hostTable = self._db.session.query(HostTable, GroupsTable).filter_by(
+            name=unicode(hostName)).outerjoin(
+            GroupsTable, HostTable.group == GroupsTable.id
+        ).first()
+
         if hostTable is None:
             raise LookupError(u"Host not found")
         return Host(hostTable, self._crypto)
@@ -33,10 +63,10 @@ class Hosts(object):
 
     def getHostsListByHostNameAndGroup(self, hostFilter=None, groupFilter=None):
         result = self._db.session.query(
-            HostTable.name).order_by(
+            HostTable.name).outerjoin(GroupsTable, HostTable.group == GroupsTable.id).order_by(
             collate(HostTable.name, 'NOCASE')
         ).filter(
-            or_(HostTable.group.in_(groupFilter), HostTable.group.is_(None))  # always include hosts without groups
+            or_(GroupsTable.name.in_(groupFilter), HostTable.group.is_(None))  # always include hosts without groups
         )
 
         if hostFilter:
@@ -77,12 +107,22 @@ class Hosts(object):
         passwd = values.get('password')
         if passwd:
             values["password"] = self._crypto.encrypt(passwd)
+        group = values.get('group')
+        if group:
+            values['group'] = self.groups.getOrCreate(group).id
         self._db.updateObject(host.ctx, values)
 
     def create(self, name, address, user, password, group=None):
+        # todo group should be probably changed to group name
         if password:
             password = self._crypto.encrypt(password)
-        host = HostTable(name=name, address=address, user=user, password=password, group=group)
+
+        if group:
+            groupId = self.groups.getOrCreate(group).id
+        else:
+            groupId = None
+
+        host = HostTable(name=name, address=address, user=user, password=password, group=groupId)
         self._db.createObject(host)
         return Host(host, self._crypto)
 
@@ -101,6 +141,9 @@ class Host(object):
 
     def setValue(self, key, value):
         return self.ctx.__setattr__(key, value)
+
+    def group(self):
+        return self.ctx.group
 
     @property
     def password(self):

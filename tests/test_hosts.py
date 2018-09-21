@@ -1,19 +1,10 @@
 # -*- coding: utf-8 -*-
-from unittest import TestCase
 from app.crypto import CryptoKey
 from app.database import Database
 from app.hosts import Hosts
+from tests import BaseTestCase
 
-
-class HostsTestCase(TestCase):
-    def setUp(self):
-        self.db = Database('sqlite://')  # in memory database
-        self.db.create()
-        self.ck = CryptoKey()
-        self.hosts = Hosts(self.db, self.ck)
-
-    def tearDown(self):
-        self.db.drop()
+class HostsTestCase(BaseTestCase):
 
     def test_password(self):
         self.hosts.create("first host", "address", "user", "password")
