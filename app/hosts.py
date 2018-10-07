@@ -45,14 +45,14 @@ class Hosts(object):
         self.groups = Groups(self._db)
 
     def get(self, hostName):
-        hostTable = self._db.session.query(HostTable, GroupsTable).filter_by(
+        hostProxy = self._db.session.query(HostTable, GroupsTable).filter_by(
             name=unicode(hostName)).outerjoin(
             GroupsTable, HostTable.group == GroupsTable.id
         ).first()
 
-        if hostTable is None:
+        if hostProxy is None:
             raise LookupError(u"Host not found")
-        return Host(hostTable, self._crypto)
+        return Host(hostProxy, self._crypto)
 
     def getAllHostsNames(self):
         """
@@ -110,7 +110,7 @@ class Hosts(object):
         group = values.get('group')
         if group:
             values['group'] = self.groups.getOrCreate(group).id
-        self._db.updateObject(host.ctx, values)
+        self._db.updateObject(host.hostData, values)
 
     def create(self, name, address, user, password, group=None):
         # todo group should be probably changed to group name
@@ -124,7 +124,6 @@ class Hosts(object):
 
         host = HostTable(name=name, address=address, user=user, password=password, group=groupId)
         self._db.createObject(host)
-        return Host(host, self._crypto)
 
     def delete(self, hostName):
         host = self.get(hostName=hostName)
@@ -132,24 +131,37 @@ class Hosts(object):
 
 
 class Host(object):
-    def __init__(self, hostTable, crypto):
-        self.ctx = hostTable
+    def __init__(self, hostProxy, crypto):
+        self.ctx = hostProxy
         self._crypto = crypto
+        self.hostData = self.ctx.HostTable
+        self.groupsData = self.ctx.GroupsTable
 
     def __getattr__(self, item):
-        return self.ctx.__dict__.get(item)
+        return self.hostData.__dict__.get(item)
 
     def setValue(self, key, value):
         return self.ctx.__setattr__(key, value)
 
+    @property
     def group(self):
-        return self.ctx.group
+        return self.groupsData.name
+
+    @property
+    def user(self):
+        user = self.hostData.user
+        if not user:
+            user = self.groupsData.default_user_name
+        return user
 
     @property
     def password(self):
-        if self.ctx.password:
+        password = self.hostData.password
+        if not password:
+            password = self.groupsData.default_user_password
+        if password:
             try:
-                return self._crypto.decrypt(self.ctx.password)
+                return self._crypto.decrypt(password)
             except ValueError as e:
                 logger.error(u"Couldn't decrypt password. {}".format(e.message))
             except TypeError as e:
